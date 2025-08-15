@@ -9,7 +9,7 @@ CHANNEL_ID = "@sexxswcccx"  # Channel username
 # Logging enable
 logging.basicConfig(level=logging.INFO)
 
-# ==== /post command ====
+# ==== + command ====
 async def post_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Check ki user ne reply kiya hai ya nahi
     if not update.message.reply_to_message:
