@@ -1,78 +1,101 @@
-import logging
-from io import BytesIO
-from PIL import Image, ImageDraw, ImageFont
-from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+import random
+import asyncio
 
-API_TOKEN = "8350094964:AAF0dQSjrBtBeSTGpUC2z5DOFo-U9_oJhBc"
+# ==== CONFIG ====
+BOT_TOKEN = "8350094964:AAF0dQSjrBtBeSTGpUC2z5DOFo-U9_oJhBc"
 
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
-)
-logger = logging.getLogger(__name__)
+# ==== GAME STATE ====
+games = {}  # chat_id : {players: [], turn: 0, last_word: "", used_words: []}
 
-def make_lined_paper(width=1080, height=1440, margin=60, line_gap=56):
-    img = Image.new("RGB", (width, height), (255, 255, 255))
-    draw = ImageDraw.Draw(img)
-    box_w = 40
-    box_margin_left = margin // 2
-    y = margin
-    while y + box_w < height - margin:
-        draw.rectangle([box_margin_left, y, box_margin_left + box_w, y + box_w], outline=(200,200,200), width=2)
-        y += line_gap
-    y = margin
-    while y < height - margin:
-        draw.line([(margin, y), (width - margin, y)], fill=(200, 220, 255), width=2)
-        y += line_gap
-    draw.text((width - 220, margin - 10), "No.", fill=(120,120,120))
-    draw.text((width - 110, margin - 10), "Date", fill=(120,120,120))
-    return img
+# ==== COMMANDS ====
 
-def write_on_paper(base_img: Image.Image, text: str, x=120, y=70, max_width=None):
-    img = base_img.copy()
-    draw = ImageDraw.Draw(img)
-    try:
-        font = ImageFont.truetype("arial.ttf", 48)
-    except Exception:
-        font = ImageFont.load_default()
-    if max_width is None:
-        max_width = img.width - x - 80
-    words = text.split()
-    line = ""
-    cur_y = y
-    for w in words:
-        test = (line + " " + w).strip()
-        tw, th = draw.textsize(test, font=font)
-        if tw > max_width:
-            draw.text((x, cur_y), line, fill=(30,30,30), font=font)
-            cur_y += th + 8
-            line = w
-        else:
-            line = test
-    if line:
-        draw.text((x, cur_y), line, fill=(30,30,30), font=font)
-    return img
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Use /write <text> to write on paper.")
-
-async def write_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
-        await update.message.reply_text("Usage: /write <text>")
+async def startgame(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    if chat_id in games:
+        await update.message.reply_text("Game already running in this chat!")
         return
-    text = " ".join(context.args)
-    base = make_lined_paper()
-    img = write_on_paper(base, text, x=120, y=90)
-    bio = BytesIO()
-    bio.name = "paper.jpg"
-    img.save(bio, "JPEG")
-    bio.seek(0)
-    await update.message.reply_photo(photo=bio, caption=f"Written: {text}")
 
+    games[chat_id] = {"players": [], "turn": 0, "last_word": "", "used_words": []}
+    await update.message.reply_text(
+        "Word Duel started! Players, join with /join"
+    )
+
+async def join(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    user = update.effective_user
+    if chat_id not in games:
+        await update.message.reply_text("No game running. Start with /startgame")
+        return
+
+    if user.id in games[chat_id]["players"]:
+        await update.message.reply_text("You already joined!")
+        return
+
+    games[chat_id]["players"].append(user.id)
+    await update.message.reply_text(f"{user.first_name} joined the game!")
+
+async def begin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    if chat_id not in games or len(games[chat_id]["players"]) < 2:
+        await update.message.reply_text("Need at least 2 players to start!")
+        return
+
+    first_word = random.choice(["apple", "banana", "computer", "telegram", "python"])
+    games[chat_id]["last_word"] = first_word
+    games[chat_id]["used_words"].append(first_word)
+    games[chat_id]["turn"] = 0
+    await update.message.reply_text(
+        f"Game begins! First word is: {first_word}\n"
+        f"{await context.bot.get_chat(games[chat_id]['players'][0])} your turn! Send a word starting with '{first_word[-1]}'"
+    )
+
+async def play(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    user = update.effective_user
+    text = update.message.text.lower()
+
+    if chat_id not in games:
+        return
+
+    game = games[chat_id]
+    if user.id != game["players"][game["turn"]]:
+        await update.message.reply_text("Wait for your turn!")
+        return
+
+    if text[0] != game["last_word"][-1]:
+        await update.message.reply_text(f"Word must start with '{game['last_word'][-1]}'")
+        return
+
+    if text in game["used_words"]:
+        await update.message.reply_text("Word already used!")
+        return
+
+    game["last_word"] = text
+    game["used_words"].append(text)
+    game["turn"] = (game["turn"] + 1) % len(game["players"])
+
+    next_player_id = game["players"][game["turn"]]
+    next_player = await context.bot.get_chat(next_player_id)
+    await update.message.reply_text(
+        f"Good! Next word is {text[-1]}.\n{next_player.first_name}, your turn!"
+    )
+
+async def endgame(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    if chat_id in games:
+        del games[chat_id]
+        await update.message.reply_text("Game ended.")
+
+# ==== MAIN ====
 def main():
-    app = Application.builder().token(API_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("write", write_cmd))
+    app = Application.builder().token(BOT_TOKEN).build()
+    app.add_handler(CommandHandler("startgame", startgame))
+    app.add_handler(CommandHandler("join", join))
+    app.add_handler(CommandHandler("begin", begin))
+    app.add_handler(CommandHandler("endgame", endgame))
+    app.add_handler(CommandHandler("play", play))
     app.run_polling()
 
 if __name__ == "__main__":
