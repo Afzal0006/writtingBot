@@ -1,5 +1,5 @@
 from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram.ext import Application, CommandHandler, ContextTypes, PrefixHandler
 import logging
 
 # ==== CONFIG ====
@@ -9,11 +9,11 @@ CHANNEL_ID = "@sexxswcccx"  # Channel username
 # Logging enable
 logging.basicConfig(level=logging.INFO)
 
-# ==== + command ====
-async def post_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# ==== "+" command ====
+async def plus_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Check ki user ne reply kiya hai ya nahi
     if not update.message.reply_to_message:
-        await update.message.reply_text("❌ Please reply to the message you want to post.")
+        await update.message.reply_text("❌ Please reply to the message you want to send.")
         return
     
     # Message forward to channel
@@ -27,7 +27,8 @@ async def post_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
 
-    app.add_handler(CommandHandler("post", post_command))
+    # "+" ko command ki tarah treat karne ke liye PrefixHandler
+    app.add_handler(PrefixHandler("+", "", plus_command))
 
     app.run_polling()
 
