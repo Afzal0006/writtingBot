@@ -1,67 +1,84 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, MessageHandler, CallbackQueryHandler, filters, ContextTypes
-import re
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+import logging, os
 
+# ===== CONFIG =====
 BOT_TOKEN = "8411607342:AAHSDSB98MDYeuYMZUk6nHqKtZy2zquhVig"
 
-whispers = {}
+logging.basicConfig(level=logging.INFO)
 
-async def whisper_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
-    match = re.match(r"@afzWhisperBot\s+(.+)\s+(@\w+)", text, re.IGNORECASE)
-    if not match:
+# Dictionary to store whispers
+whispers = {}  # key = whisper_id, value = {"to": username, "text": message, "user_id": user_id}
+
+# /whisper command
+async def whisper_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if len(context.args) < 2:
+        await update.message.reply_text("Usage: /whisper @username secret message")
         return
 
-    message, username = match.groups()
-    chat_id = update.effective_chat.id
-    msg_id = update.message.id
+    target_username = context.args[0]
+    secret_text = " ".join(context.args[1:])
 
-    whispers[f"{chat_id}:{msg_id}"] = {"message": message, "username": username.lower()}
+    # Whisper ID unique banane k liye
+    whisper_id = str(update.message.message_id)
 
-    button = InlineKeyboardMarkup([
-        [InlineKeyboardButton(f"🔒 Whisper for {username} 📩 View",
-                              callback_data=f"whisper:{chat_id}:{msg_id}")]
-    ])
+    # Store whisper data
+    whispers[whisper_id] = {
+        "to": target_username.lower(),
+        "text": secret_text,
+        "user_id": None  # target user id later fill hoga jab click karega
+    }
 
-    await context.bot.send_message(
-        chat_id=chat_id,
-        reply_markup=button,
-        text="👇 Whisper created (only recipient can open)"
+    # Button banate hain
+    button = InlineKeyboardButton("📩 View Whisper", callback_data=f"whisper_{whisper_id}")
+    reply_markup = InlineKeyboardMarkup([[button]])
+
+    # Group me placeholder bhej do
+    await update.message.reply_text(
+        f"🔒 Whisper ready for {target_username}",
+        reply_markup=reply_markup
     )
 
+# Handle button click
 async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
     data = query.data
-    if not data.startswith("whisper:"):
+    if not data.startswith("whisper_"):
         return
 
-    _, chat_id, msg_id = data.split(":")
-    key = f"{chat_id}:{msg_id}"
+    whisper_id = data.split("_", 1)[1]
 
-    if key not in whispers:
-        return await query.edit_message_text("❌ Whisper expired.")
+    if whisper_id not in whispers:
+        await query.message.reply_text("⚠️ Whisper expired or not found.")
+        return
 
-    whisper_data = whispers[key]
-    message = whisper_data["message"]
-    target_username = whisper_data["username"]
+    whisper_data = whispers[whisper_id]
+    target_username = whisper_data["to"]
+    secret_text = whisper_data["text"]
 
-    user = query.from_user
-    if user.username and ("@" + user.username.lower()) == target_username:
+    # Check if this user is target
+    if f"@{query.from_user.username}".lower() == target_username.lower():
         try:
-            await context.bot.send_message(user.id, f"🔒 Whisper for you:\n\n{message}")
+            await context.bot.send_message(
+                chat_id=query.from_user.id,
+                text=f"🔑 Your Whisper:\n\n{secret_text}"
+            )
             await query.edit_message_text("✅ Whisper delivered in your DM!")
         except:
-            await query.edit_message_text("⚠️ Please start the bot in DM to receive whispers.")
+            await query.message.reply_text("❌ Cannot send DM, please start the bot first!")
     else:
         await query.answer("❌ This whisper is not for you!", show_alert=True)
 
+# ==== MAIN ====
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, whisper_handler))
+
+    app.add_handler(CommandHandler("whisper", whisper_command))
     app.add_handler(CallbackQueryHandler(button_click))
-    print("🤖 afzWhisperBot running...")
+
+    print("🤖 WhisperBot is running...")
     app.run_polling()
 
 if __name__ == "__main__":
