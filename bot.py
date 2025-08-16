@@ -1,37 +1,27 @@
-from telegram.ext import Application
-import asyncio
-import json
-import os
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, ContextTypes
 
-# === Bot Token directly placed ===
+# === CONFIG ===
 BOT_TOKEN = "7607621887:AAHVpaKwitszMY9vfU2-s0n60QNL56rdbM0"
-GROUPS_FILE = "groups.json"
 
-# --- Load saved groups ---
-if os.path.exists(GROUPS_FILE):
-    with open(GROUPS_FILE, "r") as f:
-        group_ids = json.load(f)
-else:
-    group_ids = []
+# === Start Command ===
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [
+        [
+            InlineKeyboardButton("🧬 NFT", url="https://t.me/Multicellular"),
+            InlineKeyboardButton("🎁 Gifts", url="https://t.me/GiftysView")
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text("👋 Welcome! Choose an option below:", reply_markup=reply_markup)
 
-# --- Save groups ---
-def save_groups():
-    with open(GROUPS_FILE, "w") as f:
-        json.dump(group_ids, f)
-
-# --- Startup task to send message to all groups ---
-async def send_startup_messages(app: Application):
-    await asyncio.sleep(5)
-    for gid in group_ids:
-        try:
-            await app.bot.send_message(chat_id=gid, text="Hlo everyone")
-        except Exception as e:
-            print(f"Failed to send message to {gid}: {e}")
-
+# === Main ===
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
-    app.run_task(send_startup_messages(app))  # Startup task
-    print("🤖 Bot Started...")
+
+    app.add_handler(CommandHandler("start", start))
+
+    print("✅ Bot started with inline buttons...")
     app.run_polling()
 
 if __name__ == "__main__":
