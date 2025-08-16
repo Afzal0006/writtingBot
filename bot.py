@@ -5,7 +5,7 @@ import json
 import os
 
 # === Bot Token ===
-BOT_TOKEN = "8350094964:AAGuq7wGITTob4ASpHj6dxDmVIxppqNlhBY"
+BOT_TOKEN = "7607621887:AAHVpaKwitszMY9vfU2-s0n60QNL56rdbM0"
 GROUPS_FILE = "groups.json"
 
 # --- Load already known groups ---
