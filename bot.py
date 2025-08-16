@@ -6,34 +6,36 @@ BOT_TOKEN = "7607621887:AAHVpaKwitszMY9vfU2-s0n60QNL56rdbM0"
 # Store whispers {whisper_id: {"text": ..., "target_username": ...}}
 whispers = {}
 
-# Handle group messages starting with @afz
+# Handle group messages starting with @fhdbot
 async def handle_whisper(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
-    if not text.lower().startswith("@afz "):
+    if not text.lower().startswith("@fhdbot "):
         return
 
     parts = text.split()
     if len(parts) < 3:
-        await update.message.reply_text("❌ Format: @afz <message> @username")
+        await update.message.reply_text("❌ Format: @fhdbot <message> @username")
         return
 
     target_username = parts[-1]  # last word should be @username
     if not target_username.startswith("@"):
-        await update.message.reply_text("❌ Format: @afz <message> @username")
+        await update.message.reply_text("❌ Format: @fhdbot <message> @username")
         return
 
-    # Secret message = all words between @afz and @username
+    # Secret message = all words between @fhdbot and @username
     secret_text = " ".join(parts[1:-1])
 
     whisper_id = str(update.message.message_id)
     whispers[whisper_id] = {"text": secret_text, "target_username": target_username.lower()}
 
+    # Placeholder message for group
     button = InlineKeyboardMarkup(
-        [[InlineKeyboardButton(f"🔑 Open Whisper for {target_username}", callback_data=f"whisper:{whisper_id}")]]
+        [[InlineKeyboardButton("🔑 Open Whisper", callback_data=f"whisper:{whisper_id}")]]
     )
 
     await update.message.reply_text(
-        f"🤫 Whisper created for {target_username}", reply_markup=button
+        f"🤫 Someone sent a whisper to {target_username}",
+        reply_markup=button
     )
 
 # Handle button click
