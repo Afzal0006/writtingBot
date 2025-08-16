@@ -1,86 +1,92 @@
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
+import logging
+import re
 
+# ===== CONFIG =====
 BOT_TOKEN = "7607621887:AAHVpaKwitszMY9vfU2-s0n60QNL56rdbM0"
 
-# Queue for waiting users
-waiting_users = []
-active_chats = {}
+# Logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# Start command
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "👋 Welcome to Anonymous Chat!\n\n"
-        "Use /find to search for a partner.\n"
-        "Use /stop to end chat.\n"
-        "Use /next to find a new partner."
-    )
+# Store whispers in memory {whisper_id: {"receiver_id": int, "message": str}}
+whispers = {}
 
-# Find partner
-async def find(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.message.from_user.id
-    if user_id in active_chats:
-        await update.message.reply_text("✅ You are already chatting. Use /stop first to leave.")
+
+# --- Handle Whisper Command in Group ---
+async def whisper_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.strip()
+
+    # Match pattern: @WhisperBot message @username
+    pattern = r"@[\w]+ (.+) @([\w]+)"
+    match = re.search(pattern, text)
+
+    if not match:
+        await update.message.reply_text("❌ Format: `@WhisperBot <message> @username`", parse_mode="Markdown")
         return
 
-    if waiting_users and waiting_users[0] != user_id:
-        partner_id = waiting_users.pop(0)
-        active_chats[user_id] = partner_id
-        active_chats[partner_id] = user_id
+    secret_message = match.group(1)
+    receiver_username = match.group(2)
 
-        await context.bot.send_message(partner_id, "✅ Connected! You are now chatting anonymously.\nType /next or /stop anytime.")
-        await update.message.reply_text("✅ Connected! You are now chatting anonymously.\nType /next or /stop anytime.")
+    # Try to get receiver user object from chat
+    receiver = None
+    for member in await context.bot.get_chat_administrators(update.message.chat_id):
+        if member.user.username and member.user.username.lower() == receiver_username.lower():
+            receiver = member.user
+            break
+
+    if not receiver:
+        await update.message.reply_text(f"⚠️ User @{receiver_username} not found in this chat.")
+        return
+
+    whisper_id = str(update.message.message_id)
+    whispers[whisper_id] = {
+        "receiver_id": receiver.id,
+        "message": secret_message
+    }
+
+    # Inline button for opening whisper
+    keyboard = [[InlineKeyboardButton("🔑 Open Whisper", callback_data=f"whisper:{whisper_id}")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await update.message.reply_text(
+        f"🤫 Whisper sent to @{receiver_username} (click below to open)",
+        reply_markup=reply_markup
+    )
+
+
+# --- Handle Whisper Reveal ---
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    data = query.data
+    if not data.startswith("whisper:"):
+        return
+
+    whisper_id = data.split(":")[1]
+    whisper = whispers.get(whisper_id)
+
+    if not whisper:
+        await query.message.reply_text("❌ Whisper not found or expired.")
+        return
+
+    if query.from_user.id == whisper["receiver_id"]:
+        await query.answer(f"Secret Message: {whisper['message']}", show_alert=True)
     else:
-        if user_id not in waiting_users:
-            waiting_users.append(user_id)
-        await update.message.reply_text("⌛ Searching for a partner... Please wait.")
+        await query.answer("❌ This whisper is not for you!", show_alert=True)
 
-# Stop chat
-async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.message.from_user.id
-    if user_id in active_chats:
-        partner_id = active_chats.pop(user_id)
-        active_chats.pop(partner_id, None)
-        await context.bot.send_message(partner_id, "❌ Your partner has left the chat.")
-        await update.message.reply_text("❌ You left the chat.")
-    elif user_id in waiting_users:
-        waiting_users.remove(user_id)
-        await update.message.reply_text("❌ You stopped searching.")
-    else:
-        await update.message.reply_text("❌ You are not in a chat or queue.")
 
-# Next partner
-async def next_partner(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await stop(update, context)
-    await find(update, context)
-
-# Forward messages
-async def forward(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.message.from_user.id
-    if user_id in active_chats:
-        partner_id = active_chats[user_id]
-        if update.message.text:
-            await context.bot.send_message(partner_id, update.message.text)
-        elif update.message.photo:
-            await context.bot.send_photo(partner_id, update.message.photo[-1].file_id, caption=update.message.caption)
-        elif update.message.sticker:
-            await context.bot.send_sticker(partner_id, update.message.sticker.file_id)
-        elif update.message.voice:
-            await context.bot.send_voice(partner_id, update.message.voice.file_id)
-        elif update.message.video:
-            await context.bot.send_video(partner_id, update.message.video.file_id, caption=update.message.caption)
-
-# Main function
+# ====== MAIN ======
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("find", find))
-    app.add_handler(CommandHandler("stop", stop))
-    app.add_handler(CommandHandler("next", next_partner))
-    app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, forward))
+    app.add_handler(MessageHandler(filters.TEXT & filters.Entity("mention"), whisper_handler))
+    app.add_handler(CallbackQueryHandler(button_handler))
 
     app.run_polling()
+
 
 if __name__ == "__main__":
     main()
