@@ -1,97 +1,72 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, MessageHandler, CallbackQueryHandler, ContextTypes, filters
-import logging
-import re
 
-# ===== CONFIG =====
 BOT_TOKEN = "7607621887:AAHVpaKwitszMY9vfU2-s0n60QNL56rdbM0"
 
-# Logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-# Store whispers in memory {whisper_id: {"receiver_username": str, "receiver_id": int, "message": str}}
+# Store whispers {whisper_id: {"text": ..., "target_username": ...}}
 whispers = {}
 
-
-# --- Handle Whisper Command in Group ---
-async def whisper_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# Handle group messages starting with @afz
+async def handle_whisper(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
+    if not text.lower().startswith("@afz "):
+        return
 
-    # Format: @afz message @username
-    pattern = r"@afz (.+) @([\w]+)"
-    match = re.search(pattern, text)
+    parts = text.split()
+    if len(parts) < 3:
+        await update.message.reply_text("❌ Format: @afz <message> @username")
+        return
 
-    if not match:
-        return  # Ignore messages not matching the pattern
+    target_username = parts[-1]  # last word should be @username
+    if not target_username.startswith("@"):
+        await update.message.reply_text("❌ Format: @afz <message> @username")
+        return
 
-    secret_message = match.group(1)
-    receiver_username = match.group(2)
-
-    # Try to resolve user_id (only works if user has interacted with bot)
-    receiver_id = None
-    try:
-        chat = await context.bot.get_chat(update.effective_chat.id)
-        members = await chat.get_administrators()
-        for member in members:
-            if member.user.username and member.user.username.lower() == receiver_username.lower():
-                receiver_id = member.user.id
-                break
-    except Exception as e:
-        logger.warning(f"Error getting chat members: {e}")
+    # Secret message = all words between @afz and @username
+    secret_text = " ".join(parts[1:-1])
 
     whisper_id = str(update.message.message_id)
-    whispers[whisper_id] = {
-        "receiver_username": receiver_username,
-        "receiver_id": receiver_id,
-        "message": secret_message
-    }
+    whispers[whisper_id] = {"text": secret_text, "target_username": target_username.lower()}
 
-    # Inline button for opening whisper
-    keyboard = [[InlineKeyboardButton("🔑 Open Whisper", callback_data=f"whisper:{whisper_id}")]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    await update.message.reply_text(
-        f"🤫 Whisper for @{receiver_username} (click below to open)",
-        reply_markup=reply_markup
+    button = InlineKeyboardMarkup(
+        [[InlineKeyboardButton(f"🔑 Open Whisper for {target_username}", callback_data=f"whisper:{whisper_id}")]]
     )
 
+    await update.message.reply_text(
+        f"🤫 Whisper created for {target_username}", reply_markup=button
+    )
 
-# --- Handle Whisper Reveal ---
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# Handle button click
+async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    data = query.data
-    if not data.startswith("whisper:"):
+    if not query.data.startswith("whisper:"):
         return
 
-    whisper_id = data.split(":")[1]
-    whisper = whispers.get(whisper_id)
-
-    if not whisper:
-        await query.message.reply_text("❌ Whisper not found or expired.")
+    whisper_id = query.data.split(":")[1]
+    if whisper_id not in whispers:
+        await query.answer("❌ Whisper not found!", show_alert=True)
         return
 
-    if whisper["receiver_id"] and query.from_user.id == whisper["receiver_id"]:
-        # If bot knows the receiver_id
-        await query.answer(f"Secret Message: {whisper['message']}", show_alert=True)
-    elif query.from_user.username and query.from_user.username.lower() == whisper["receiver_username"].lower():
-        # If only username is available
-        await query.answer(f"Secret Message: {whisper['message']}", show_alert=True)
+    whisper = whispers[whisper_id]
+    target_username = whisper["target_username"]
+    secret_text = whisper["text"]
+
+    user_username = "@" + query.from_user.username if query.from_user.username else None
+
+    if user_username and user_username.lower() == target_username:
+        await query.answer(f"💌 Secret: {secret_text}", show_alert=True)
     else:
-        await query.answer("❌ This whisper is not for you!", show_alert=True)
+        await query.answer("🚫 This whisper is not for you!", show_alert=True)
 
-
-# ====== MAIN ======
+# Main
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
-
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, whisper_handler))
-    app.add_handler(CallbackQueryHandler(button_handler))
-
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_whisper))
+    app.add_handler(CallbackQueryHandler(button_click))
+    print("🤖 Bot running...")
     app.run_polling()
-
 
 if __name__ == "__main__":
     main()
