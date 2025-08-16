@@ -1,45 +1,62 @@
 from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+import asyncio
+import json
+import os
 
-# ==== CONFIG ====
-BOT_TOKEN = "7607621887:AAHVpaKwitszMY9vfU2-s0n60QNL56rdbM0"
-OWNER_ID = 7607621887  # Apna Telegram user ID (@userinfobot se le lo)
+# === Bot Token ===
+BOT_TOKEN = "8350094964:AAGuq7wGITTob4ASpHj6dxDmVIxppqNlhBY"
+GROUPS_FILE = "groups.json"
 
-# Groups ka list manually daal lo (bot already in groups hai)
-groups = [
-    -1001234567890,  # group 1 ID
-    -1009876543210,  # group 2 ID
-]
+# --- Load already known groups ---
+if os.path.exists(GROUPS_FILE):
+    with open(GROUPS_FILE, "r") as f:
+        group_ids = json.load(f)
+else:
+    group_ids = []
 
-# ==== BROADCAST ====
-async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != OWNER_ID:
-        await update.message.reply_text("❌ Ye command sirf owner ke liye hai.")
-        return
+# --- Save groups ---
+def save_groups():
+    with open(GROUPS_FILE, "w") as f:
+        json.dump(group_ids, f)
 
-    if not context.args:
-        await update.message.reply_text("Usage: /broadcast <message>")
-        return
-
-    text = " ".join(context.args)
-    success = 0
-    for gid in groups:
+# --- Auto welcome message on startup ---
+async def send_startup_messages(app):
+    await asyncio.sleep(5)  # thoda wait
+    # Send message to all known groups
+    for gid in group_ids:
         try:
-            await context.bot.send_message(gid, text)
-            success += 1
-        except Exception as e:
-            print(f"Error in {gid}: {e}")
+            await app.bot.send_message(chat_id=gid, text="Hello everyone")
+        except:
+            pass
 
-    await update.message.reply_text(f"✅ Broadcast sent to {success} groups.")
+# --- Track new groups bot joins ---
+async def new_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat = update.effective_chat
+    if chat.type in ["group", "supergroup"] and chat.id not in group_ids:
+        group_ids.append(chat.id)
+        save_groups()
+        # Optional: immediately send message to new group
+        try:
+            await context.bot.send_message(chat.id, "Hello everyone")
+        except:
+            pass
 
-# ==== START ====
+# --- Optional: respond to /start ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Hello! Mai broadcast bot hu.")
+    await update.message.reply_text("Bot is running!")
 
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
+
+    # Commands & message handlers
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("broadcast", broadcast))
+    app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, new_group))
+
+    # Startup task
+    app.post_init(send_startup_messages)
+
+    print("🤖 Bot Started...")
     app.run_polling()
 
 if __name__ == "__main__":
