@@ -1,34 +1,30 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, MessageHandler, CallbackQueryHandler, ContextTypes, filters
+import re
 
-BOT_TOKEN = "7607621887:AAHVpaKwitszMY9vfU2-s0n60QNL56rdbM0"
+BOT_TOKEN = "8411607342:AAHSDSB98MDYeuYMZUk6nHqKtZy2zquhVig"
+BOT_USERNAME = "@AfzWhisperBot"
 
-# Store whispers {whisper_id: {"text": ..., "target_username": ...}}
+# Store whispers
 whispers = {}
 
-# Handle group messages starting with @fhdbot
+# Handle whisper command
 async def handle_whisper(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
-    if not text.lower().startswith("@fhdbot "):
-        return
 
-    parts = text.split()
-    if len(parts) < 3:
-        await update.message.reply_text("❌ Format: @fhdbot <message> @username")
-        return
+    # Regex: @AfzWhisperBot <message> @username
+    pattern = rf"{BOT_USERNAME}\s+(.+)\s+(@\w+)$"
+    match = re.match(pattern, text, re.IGNORECASE)
+    if not match:
+        return  # Ignore if format not matched
 
-    target_username = parts[-1]  # last word should be @username
-    if not target_username.startswith("@"):
-        await update.message.reply_text("❌ Format: @fhdbot <message> @username")
-        return
-
-    # Secret message = all words between @fhdbot and @username
-    secret_text = " ".join(parts[1:-1])
+    secret_text = match.group(1)
+    target_username = match.group(2).lower()
 
     whisper_id = str(update.message.message_id)
-    whispers[whisper_id] = {"text": secret_text, "target_username": target_username.lower()}
+    whispers[whisper_id] = {"text": secret_text, "target_username": target_username}
 
-    # Placeholder message for group
+    # Placeholder in group
     button = InlineKeyboardMarkup(
         [[InlineKeyboardButton("🔑 Open Whisper", callback_data=f"whisper:{whisper_id}")]]
     )
