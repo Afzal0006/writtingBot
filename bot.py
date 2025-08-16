@@ -1,5 +1,5 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
+from telegram.ext import Application, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 import logging
 import re
 
@@ -10,7 +10,7 @@ BOT_TOKEN = "7607621887:AAHVpaKwitszMY9vfU2-s0n60QNL56rdbM0"
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Store whispers in memory {whisper_id: {"receiver_id": int, "message": str}}
+# Store whispers in memory {whisper_id: {"receiver_username": str, "receiver_id": int, "message": str}}
 whispers = {}
 
 
@@ -18,31 +18,32 @@ whispers = {}
 async def whisper_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
 
-    # Match pattern: @WhisperBot message @username
-    pattern = r"@[\w]+ (.+) @([\w]+)"
+    # Format: @afz message @username
+    pattern = r"@afz (.+) @([\w]+)"
     match = re.search(pattern, text)
 
     if not match:
-        await update.message.reply_text("❌ Format: `@WhisperBot <message> @username`", parse_mode="Markdown")
-        return
+        return  # Ignore messages not matching the pattern
 
     secret_message = match.group(1)
     receiver_username = match.group(2)
 
-    # Try to get receiver user object from chat
-    receiver = None
-    for member in await context.bot.get_chat_administrators(update.message.chat_id):
-        if member.user.username and member.user.username.lower() == receiver_username.lower():
-            receiver = member.user
-            break
-
-    if not receiver:
-        await update.message.reply_text(f"⚠️ User @{receiver_username} not found in this chat.")
-        return
+    # Try to resolve user_id (only works if user has interacted with bot)
+    receiver_id = None
+    try:
+        chat = await context.bot.get_chat(update.effective_chat.id)
+        members = await chat.get_administrators()
+        for member in members:
+            if member.user.username and member.user.username.lower() == receiver_username.lower():
+                receiver_id = member.user.id
+                break
+    except Exception as e:
+        logger.warning(f"Error getting chat members: {e}")
 
     whisper_id = str(update.message.message_id)
     whispers[whisper_id] = {
-        "receiver_id": receiver.id,
+        "receiver_username": receiver_username,
+        "receiver_id": receiver_id,
         "message": secret_message
     }
 
@@ -51,7 +52,7 @@ async def whisper_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     await update.message.reply_text(
-        f"🤫 Whisper sent to @{receiver_username} (click below to open)",
+        f"🤫 Whisper for @{receiver_username} (click below to open)",
         reply_markup=reply_markup
     )
 
@@ -72,7 +73,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text("❌ Whisper not found or expired.")
         return
 
-    if query.from_user.id == whisper["receiver_id"]:
+    if whisper["receiver_id"] and query.from_user.id == whisper["receiver_id"]:
+        # If bot knows the receiver_id
+        await query.answer(f"Secret Message: {whisper['message']}", show_alert=True)
+    elif query.from_user.username and query.from_user.username.lower() == whisper["receiver_username"].lower():
+        # If only username is available
         await query.answer(f"Secret Message: {whisper['message']}", show_alert=True)
     else:
         await query.answer("❌ This whisper is not for you!", show_alert=True)
@@ -82,7 +87,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
 
-    app.add_handler(MessageHandler(filters.TEXT & filters.Entity("mention"), whisper_handler))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, whisper_handler))
     app.add_handler(CallbackQueryHandler(button_handler))
 
     app.run_polling()
