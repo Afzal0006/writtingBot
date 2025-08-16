@@ -1,35 +1,45 @@
 from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes, PrefixHandler
-import logging
+from telegram.ext import Application, CommandHandler, ContextTypes
 
 # ==== CONFIG ====
-BOT_TOKEN = "7643831340:AAGieuPJND4MekAutSf3xzta1qdoKo5mbZU"
-CHANNEL_ID = "@sexxswcccx"  # Channel username
+BOT_TOKEN = "7607621887:AAHVpaKwitszMY9vfU2-s0n60QNL56rdbM0"
+OWNER_ID = 7607621887  # Apna Telegram user ID (@userinfobot se le lo)
 
-# Logging enable
-logging.basicConfig(level=logging.INFO)
+# Groups ka list manually daal lo (bot already in groups hai)
+groups = [
+    -1001234567890,  # group 1 ID
+    -1009876543210,  # group 2 ID
+]
 
-# ==== "+" command ====
-async def plus_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Check ki user ne reply kiya hai ya nahi
-    if not update.message.reply_to_message:
-        await update.message.reply_text("❌ Please reply to the message you want to send.")
+# ==== BROADCAST ====
+async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != OWNER_ID:
+        await update.message.reply_text("❌ Ye command sirf owner ke liye hai.")
         return
-    
-    # Message forward to channel
-    try:
-        await update.message.reply_to_message.forward(chat_id=CHANNEL_ID)
-        await update.message.reply_text("✅ Message posted to channel.")
-    except Exception as e:
-        await update.message.reply_text(f"Error: {e}")
 
-# ==== Main ====
+    if not context.args:
+        await update.message.reply_text("Usage: /broadcast <message>")
+        return
+
+    text = " ".join(context.args)
+    success = 0
+    for gid in groups:
+        try:
+            await context.bot.send_message(gid, text)
+            success += 1
+        except Exception as e:
+            print(f"Error in {gid}: {e}")
+
+    await update.message.reply_text(f"✅ Broadcast sent to {success} groups.")
+
+# ==== START ====
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Hello! Mai broadcast bot hu.")
+
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
-
-    # "+" ko command ki tarah treat karne ke liye PrefixHandler
-    app.add_handler(PrefixHandler("+", "", plus_command))
-
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("broadcast", broadcast))
     app.run_polling()
 
 if __name__ == "__main__":
