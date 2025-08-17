@@ -1,18 +1,16 @@
-import os
 import random
 import logging
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
 # ===== CONFIG =====
-# Get bot token from environment variable (safer than hardcoding)
-BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")  # Set this in your system or hosting service
+BOT_TOKEN = "8411607342:AAHSDSB98MDYeuYMZUk6nHqKtZy2zquhVig"  # Replace this with your real token
 
 # Logging
 logging.basicConfig(level=logging.INFO)
 
 # ===== GLOBAL DATA =====
-user_scores = {}  # Keeps track of users' total dice rolls
+user_scores = {}  # Keep track of user scores
 
 # ===== COMMANDS =====
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -24,11 +22,9 @@ async def roll(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     dice_value = random.randint(1, 6)
     dice_faces = {1:"⚀",2:"⚁",3:"⚂",4:"⚃",5:"⚄",6:"⚅"}
-    
+
     # Update user score
-    if user.id not in user_scores:
-        user_scores[user.id] = 0
-    user_scores[user.id] += dice_value
+    user_scores[user.id] = user_scores.get(user.id, 0) + dice_value
 
     await update.message.reply_text(
         f"{user.first_name} rolled a {dice_value} {dice_faces[dice_value]}!\n"
@@ -37,8 +33,9 @@ async def roll(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def score(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    score = user_scores.get(user.id, 0)
-    await update.message.reply_text(f"{user.first_name}, your total score is: {score}")
+    await update.message.reply_text(
+        f"{user.first_name}, your total score is: {user_scores.get(user.id, 0)}"
+    )
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
@@ -47,10 +44,6 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ===== MAIN =====
 def main():
-    if not BOT_TOKEN:
-        print("Error: Please set TELEGRAM_BOT_TOKEN environment variable!")
-        return
-
     app = Application.builder().token(BOT_TOKEN).build()
 
     # Handlers
