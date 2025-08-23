@@ -1,59 +1,33 @@
-import random
-import logging
-from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+from pyrogram import Client
+import asyncio
+import os
 
-# ===== CONFIG =====
-BOT_TOKEN = "8411607342:AAHSDSB98MDYeuYMZUk6nHqKtZy2zquhVig"  # Replace this with your real token
+API_ID = 21081718
+API_HASH = "fec3c59a0f36beb71199dba4459eef86"
+SESSION = "BQFBrnYAl-pWnXbngB408FvSpoCaD7zojyTEPq9HUho4f_6juAcAzJ7TuF0v2TCZ0ahvEsEHjHhxWxyq9VbYwCh1mfUQvtHiy6WLaSor8F0g_jaz07f-W8_Gy6NQLiEJt_YXrhy4Py0L6MnTSxb4U_Xn4PWlQQ934BD-nh8BxyCgTV_DcQrvA8YwpWDGeKem1ZaAK8lQvtcCj5jmNs4WBHNSXchphObU_MxfZm_-lKCABX3CYY_I_CIyNMQH9WUIp2syavT-9iakCWa8WtMN-NFrxPc6LX14KxveI24ZmGeBj2_bwxWTDrzrJj4ppYiGZ6Xvo06tAlKkmFY4bihnqvTPgbopYAAAAAGxU39QAA"
+BOT_USERNAME = "@DemoEscrowerBot"  # bot username fill
 
-# Logging
-logging.basicConfig(level=logging.INFO)
+app = Client(SESSION, api_id=API_ID, api_hash=API_HASH)
 
-# ===== GLOBAL DATA =====
-user_scores = {}  # Keep track of user scores
+async def create_escrow():
+    # Supergroup banao
+    new_chat = await app.create_supergroup("Escrow Group", "Automatic escrow group bana diya gaya")
+    
+    # Bot ko group me add karo
+    await app.add_chat_members(new_chat.id, [BOT_USERNAME])
+    
+    # Invite link nikalo
+    link = await app.export_chat_invite_link(new_chat.id)
+    
+    # Link ko file me save karo
+    with open("escrow_link.txt", "w") as f:
+        f.write(link)
+    
+    print("✅ Group created:", link)
 
-# ===== COMMANDS =====
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "🎲 Welcome to Dice Roller Bot!\nUse /roll to roll a dice.\nUse /score to see your total score."
-    )
+@app.on_message()
+async def handle_msg(client, message):
+    if message.text == "CREATE_ESCROW":
+        await create_escrow()
 
-async def roll(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    dice_value = random.randint(1, 6)
-    dice_faces = {1:"⚀",2:"⚁",3:"⚂",4:"⚃",5:"⚄",6:"⚅"}
-
-    # Update user score
-    user_scores[user.id] = user_scores.get(user.id, 0) + dice_value
-
-    await update.message.reply_text(
-        f"{user.first_name} rolled a {dice_value} {dice_faces[dice_value]}!\n"
-        f"Your total score: {user_scores[user.id]}"
-    )
-
-async def score(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    await update.message.reply_text(
-        f"{user.first_name}, your total score is: {user_scores.get(user.id, 0)}"
-    )
-
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "Commands:\n/start - Welcome message\n/roll - Roll a dice\n/score - See your total score"
-    )
-
-# ===== MAIN =====
-def main():
-    app = Application.builder().token(BOT_TOKEN).build()
-
-    # Handlers
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("roll", roll))
-    app.add_handler(CommandHandler("score", score))
-    app.add_handler(CommandHandler("help", help_command))
-
-    # Run the bot
-    app.run_polling()
-
-if __name__ == "__main__":
-    main()
+app.run()
